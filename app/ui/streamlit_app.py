@@ -1,7 +1,9 @@
 import streamlit as st
 import requests
+import os
 
-API_URL = "http://127.0.0.1:8000"
+# Get API URL from environment variable, default to local for development
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(page_title="IPL Analytics Assistant", layout="wide")
 st.title("🏏 IPL Analytics Assistant")
