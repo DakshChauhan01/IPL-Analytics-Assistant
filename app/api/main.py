@@ -44,14 +44,29 @@ _DATA_DIR = _PROJECT / "data" / "analytics"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model at startup if adapter exists, or just log a warning."""
+    """Load model at startup unless `LOAD_MODEL` is explicitly false.
+
+    Set environment variable `LOAD_MODEL=false` to skip heavy model loading
+    during deployment/build. Use the admin `/admin/load_model` endpoint to
+    load the model later when a GPU is available.
+    """
+    load_model_flag = True
     try:
-        from app.services.generator import load_model, is_finetuned
-        load_model()
-        logger.info(f"Model loaded (fine-tuned={is_finetuned()})")
-    except Exception as e:
-        logger.warning(f"Model not loaded at startup: {e}")
-        logger.info("API will run in retrieval-only mode. /chat will fail until model is available.")
+        import os
+        load_model_flag = os.getenv("LOAD_MODEL", "true").lower() in ("1", "true", "yes")
+    except Exception:
+        load_model_flag = True
+
+    if load_model_flag:
+        try:
+            from app.services.generator import load_model, is_finetuned
+            load_model()
+            logger.info(f"Model loaded (fine-tuned={is_finetuned()})")
+        except Exception as e:
+            logger.warning(f"Model not loaded at startup: {e}")
+            logger.info("API will run in retrieval-only mode. /chat will fail until model is available.")
+    else:
+        logger.info("Skipping model load at startup (LOAD_MODEL=false). API runs in retrieval-only mode.")
     yield
 
 
@@ -202,6 +217,31 @@ def debug_retrieve(req: RetrieveRequest):
         structured_results=serializable_structured,
         insight_results=serializable_insights,
     )
+
+
+# ── Admin endpoints ─────────────────────────────────────────────────────
+
+
+@app.post("/admin/load_model")
+def admin_load_model():
+    """Load the LLM at runtime (useful if skipped during startup)."""
+    try:
+        from app.services.generator import load_model, is_finetuned
+        load_model()
+        return {"loaded": True, "finetuned": is_finetuned()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model load failed: {e}")
+
+
+@app.get("/admin/model_status")
+def admin_model_status():
+    """Return whether a model is currently loaded and whether it's finetuned."""
+    try:
+        from app.services.generator import _MODEL, is_finetuned
+        loaded = _MODEL is not None
+        return {"loaded": bool(loaded), "finetuned": is_finetuned()}
+    except Exception:
+        return {"loaded": False, "finetuned": False}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
