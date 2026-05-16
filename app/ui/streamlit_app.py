@@ -14,26 +14,6 @@ col1, col2 = st.columns(2)
 
 if col1.button("Ask"):
     if query.strip():
-        with st.spinner("Thinking..."):
-            response = requests.post(
-                f"{API_URL}/chat",
-                json={"query": query},
-                timeout=120
-            )
-            res = response.json()
-
-        st.subheader("Answer")
-        st.write(res.get("answer", "No answer returned."))
-
-        st.markdown("---")
-        st.write(f"**Route:** {res.get('route')} | **Intent:** {res.get('intent')}")
-        st.write(
-            f"**Structured:** {res.get('structured_count', 0)} | "
-            f"**Insights:** {res.get('insight_count', 0)}"
-        )
-
-if col2.button("Debug"):
-    if query.strip():
         with st.spinner("Retrieving..."):
             response = requests.post(
                 f"{API_URL}/debug/retrieve",
@@ -42,12 +22,16 @@ if col2.button("Debug"):
             )
             res = response.json()
 
-        st.subheader("Debug Info")
-        st.write("Route:", res.get("route"))
-        st.write("Intent:", res.get("intent"))
-        st.write("Entities:", res.get("entities"))
-        st.write("Structured:", res.get("structured_count"))
-        st.write("Insights:", res.get("insight_count"))
+        st.subheader("Retrieved Data")
+        st.write(f"**Route:** {res.get('route')} | **Intent:** {res.get('intent')}")
+        st.write(
+            f"**Structured Results:** {res.get('structured_count', 0)} | "
+            f"**Insights:** {res.get('insight_count', 0)}"
+        )
 
-        st.markdown("### Context")
-        st.write(res.get("context"))
+        st.markdown("---")
+        st.subheader("Context")
+        st.write(res.get("context", "No context found."))
+
+if col2.button("Clear"):
+    st.rerun()
