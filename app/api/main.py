@@ -26,10 +26,6 @@ from app.api.schemas import (
     RetrieveRequest, RetrieveResponse,
     HealthResponse,
 )
-from app.services.query_router import classify_query
-from app.services.orchestrator import _retrieve_structured, answer_query
-from app.services.insight_retriever import retrieve_insights
-from app.services.context_builder import build_context
 
 logger = logging.getLogger("ipl_api")
 
@@ -129,6 +125,7 @@ def chat(req: ChatRequest):
     start = time.time()
 
     try:
+        from app.services.orchestrator import answer_query
         result = answer_query(req.query, verbose=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
@@ -159,6 +156,11 @@ def debug_retrieve(req: RetrieveRequest):
     Useful for debugging and front-end demos without GPU.
     """
     ql = req.query.lower()
+    from app.services.query_router import classify_query
+    from app.services.orchestrator import _retrieve_structured
+    from app.services.insight_retriever import retrieve_insights
+    from app.services.context_builder import build_context
+
     route_info = classify_query(req.query)
     intent = route_info["intent"]
     entities = route_info["entities"]

@@ -12,7 +12,11 @@ from app.services.query_router import classify_query
 from app.services import structured_retriever as sr
 from app.services.insight_retriever import retrieve_insights
 from app.services.context_builder import build_context
-from app.services.generator import generate_answer
+
+
+def _lazy_generate_answer(query: str, context: str, intent: str):
+    from app.services.generator import generate_answer
+    return generate_answer(query, context, intent=intent)
 
 
 def _retrieve_structured(query_lower: str, route_info: dict) -> list[dict]:
@@ -156,7 +160,7 @@ def answer_query(query: str, verbose: bool = False) -> dict:
     )
 
     # ── Generation (intent-aware) ──
-    answer = generate_answer(query, context, intent=intent)
+    answer = _lazy_generate_answer(query, context, intent)
 
     result = {"answer": answer}
     if verbose:
