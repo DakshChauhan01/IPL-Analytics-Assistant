@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     during deployment/build. Use the admin `/admin/load_model` endpoint to
     load the model later when a GPU is available.
     
-    If TOGETHER_API_KEY is set, the API will be used for generation instead
+    If HF_API_KEY is set, the API will be used for generation instead
     of loading the local model.
     """
     load_model_flag = True
@@ -54,13 +54,13 @@ async def lifespan(app: FastAPI):
     try:
         import os
         load_model_flag = os.getenv("LOAD_MODEL", "true").lower() in ("1", "true", "yes")
-        use_api = bool(os.getenv("TOGETHER_API_KEY", ""))
+        use_api = bool(os.getenv("HF_API_KEY", ""))
     except Exception:
         load_model_flag = True
         use_api = False
 
     if use_api:
-        logger.info("✓ Using Together.ai API for generation (TOGETHER_API_KEY is set)")
+        logger.info("✓ Using HuggingFace Inference API for generation (HF_API_KEY is set)")
     elif load_model_flag:
         try:
             from app.services.generator import load_model, is_finetuned
@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Model not loaded at startup: {e}")
             logger.info("API will run in retrieval-only mode. /chat will fail until model is available.")
     else:
-        logger.info("Skipping model load at startup (LOAD_MODEL=false). Use /admin/load_model or set TOGETHER_API_KEY.")
+        logger.info("Skipping model load at startup (LOAD_MODEL=false). Use /admin/load_model or set HF_API_KEY.")
     yield
 
 

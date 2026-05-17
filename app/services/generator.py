@@ -49,9 +49,9 @@ _TOKENIZER = None
 _IS_FINETUNED = False
 BASE_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 
-# Together.ai API configuration
-TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
-TOGETHER_API_URL = "https://api.together.xyz/inference"
+# HuggingFace Inference API configuration
+HF_API_KEY = os.getenv("HF_API_KEY", "")
+HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -451,17 +451,17 @@ def generate_answer(
     temperature: float = 0.2,
 ) -> str:
     """
-    Generate answer using either Together.ai API or local model.
-    Prefers API if TOGETHER_API_KEY is set.
+    Generate answer using either HuggingFace Inference API or local model.
+    Prefers API if HF_API_KEY is set.
     """
     prompt = _build_prompt(question, context, intent)
     
     # Try API first if key is configured
-    if TOGETHER_API_KEY:
+    if HF_API_KEY:
         try:
-            return _generate_with_api(prompt, max_new_tokens, temperature)
+            return _generate_with_hf_api(prompt, max_new_tokens, temperature)
         except Exception as e:
-            print(f"⚠ Together.ai API failed: {e}, falling back to local model")
+            print(f"⚠ HuggingFace API failed: {e}, falling back to local model")
             # Fall through to local model
     
     # Fall back to local model
@@ -483,38 +483,42 @@ def generate_answer(
     return tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
 
-def _generate_with_api(prompt: str, max_tokens: int, temperature: float) -> str:
-    """Call Together.ai API for generation."""
+def _generate_with_hf_api(prompt: str, max_tokens: int, temperature: float) -> str:
+    """Call HuggingFace Inference API for generation."""
     headers = {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Authorization": f"Bearer {HF_API_KEY}",
         "Content-Type": "application/json",
     }
     
     payload = {
-        "model": "mistralai/Mistral-7B-Instruct-v0.3",
-        "prompt": prompt,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": 0.85,
-        "repetition_penalty": 1.15,
-        "stop": ["[/INST]", "Question:", "\n\nQuestion:"],
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.85,
+            "repetition_penalty": 1.15,
+            "do_sample": temperature > 0,
+        },
+        "options": {
+            "wait_for_model": True,
+        }
     }
     
     response = requests.post(
-        "https://api.together.xyz/inference",
+        HF_API_URL,
         headers=headers,
         json=payload,
-        timeout=60,
+        timeout=120,
     )
     response.raise_for_status()
     result = response.json()
     
-    if "output" in result:
-        # Together.ai wraps result in "output" dict
-        text = result["output"].get("choices", [{}])[0].get("text", "")
-    elif "choices" in result:
-        # Standard OpenAI format
-        text = result["choices"][0].get("text", "")
+    # HF returns list of dicts with "generated_text"
+    if isinstance(result, list) and len(result) > 0:
+        text = result[0].get("generated_text", "")
+        # Remove the prompt from the output
+        if text.startswith(prompt):
+            text = text[len(prompt):]
     else:
         text = ""
     
