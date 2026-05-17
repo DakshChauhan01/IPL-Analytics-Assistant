@@ -22,10 +22,16 @@ Everything else is UNCHANGED from v3:
     season_comparison, venue, phase, season)
   - _build_prompt logic for comparison injection
   - Generation parameters (temp=0.2, top_p=0.85, rep_penalty=1.15)
+
+DEPLOYMENT OVERRIDE:
+  - When TOGETHER_API_KEY is set, uses Together.ai API instead of local model
+  - This allows free tier deployment on Render (512MB) without GPU
 """
 
 import re
+import os
 import torch
+import requests
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -42,6 +48,10 @@ _MODEL = None
 _TOKENIZER = None
 _IS_FINETUNED = False
 BASE_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
+
+# Together.ai API configuration
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
+TOGETHER_API_URL = "https://api.together.xyz/inference"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -430,7 +440,7 @@ def _build_prompt(question: str, context: str, intent: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Generation (UNCHANGED from v3)
+# Generation (UPDATED for API support)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def generate_answer(
@@ -440,8 +450,22 @@ def generate_answer(
     max_new_tokens: int = 400,
     temperature: float = 0.2,
 ) -> str:
-    model, tokenizer = load_model()
+    """
+    Generate answer using either Together.ai API or local model.
+    Prefers API if TOGETHER_API_KEY is set.
+    """
     prompt = _build_prompt(question, context, intent)
+    
+    # Try API first if key is configured
+    if TOGETHER_API_KEY:
+        try:
+            return _generate_with_api(prompt, max_new_tokens, temperature)
+        except Exception as e:
+            print(f"⚠ Together.ai API failed: {e}, falling back to local model")
+            # Fall through to local model
+    
+    # Fall back to local model
+    model, tokenizer = load_model()
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     with torch.no_grad():
@@ -457,3 +481,41 @@ def generate_answer(
 
     generated_ids = outputs[0][inputs["input_ids"].shape[1]:]
     return tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+
+
+def _generate_with_api(prompt: str, max_tokens: int, temperature: float) -> str:
+    """Call Together.ai API for generation."""
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    payload = {
+        "model": "mistralai/Mistral-7B-Instruct-v0.3",
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "top_p": 0.85,
+        "repetition_penalty": 1.15,
+        "stop": ["[/INST]", "Question:", "\n\nQuestion:"],
+    }
+    
+    response = requests.post(
+        "https://api.together.xyz/inference",
+        headers=headers,
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    result = response.json()
+    
+    if "output" in result:
+        # Together.ai wraps result in "output" dict
+        text = result["output"].get("choices", [{}])[0].get("text", "")
+    elif "choices" in result:
+        # Standard OpenAI format
+        text = result["choices"][0].get("text", "")
+    else:
+        text = ""
+    
+    return text.strip()

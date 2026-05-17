@@ -45,15 +45,23 @@ async def lifespan(app: FastAPI):
     Set environment variable `LOAD_MODEL=false` to skip heavy model loading
     during deployment/build. Use the admin `/admin/load_model` endpoint to
     load the model later when a GPU is available.
+    
+    If TOGETHER_API_KEY is set, the API will be used for generation instead
+    of loading the local model.
     """
     load_model_flag = True
+    use_api = False
     try:
         import os
         load_model_flag = os.getenv("LOAD_MODEL", "true").lower() in ("1", "true", "yes")
+        use_api = bool(os.getenv("TOGETHER_API_KEY", ""))
     except Exception:
         load_model_flag = True
+        use_api = False
 
-    if load_model_flag:
+    if use_api:
+        logger.info("✓ Using Together.ai API for generation (TOGETHER_API_KEY is set)")
+    elif load_model_flag:
         try:
             from app.services.generator import load_model, is_finetuned
             load_model()
@@ -62,7 +70,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Model not loaded at startup: {e}")
             logger.info("API will run in retrieval-only mode. /chat will fail until model is available.")
     else:
-        logger.info("Skipping model load at startup (LOAD_MODEL=false). API runs in retrieval-only mode.")
+        logger.info("Skipping model load at startup (LOAD_MODEL=false). Use /admin/load_model or set TOGETHER_API_KEY.")
     yield
 
 
